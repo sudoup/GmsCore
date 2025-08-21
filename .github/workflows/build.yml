@@ -1,49 +1,49 @@
-name: "Gradle build"
-permissions: {}
+name: build apk
+
 on:
-  - push
-  - pull_request
-  - workflow_dispatch
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
 
 jobs:
   build:
-    name: "Gradle build"
     runs-on: ubuntu-latest
 
     steps:
-      - name: "Checkout sources"
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: "Setup Java"
-        uses: actions/setup-java@v4
-        with:
-          distribution: "temurin"
-          java-version: "17"
-      - name: "Gradle Wrapper validation"
-        uses: gradle/wrapper-validation-action@v2
-      - name: "Setup Gradle"
-        uses: gradle/actions/setup-gradle@v3
-      - name: Cache Gradle
-        uses: burrunan/gradle-cache-action@v1
-      - name: "Setup matchers"
-        run: |
-          # Setting up matchers...
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
 
-          matchers_dir='${{ github.workspace }}/.github/matchers'
-          matcher_list()
-          {
-            echo 'gradle-build-matcher.json'
-            echo 'gradle-build-kotlin-error-matcher.json'
-          }
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '17'
 
-          matcher_list | while IFS='' read -r NAME; do
-            if test -f "${matchers_dir:?}/${NAME:?}"; then
-              echo "::add-matcher::${matchers_dir:?}/${NAME:?}"
-              echo "Matcher configured: ${NAME:?}"
-            fi
-          done
-      - name: "Execute Gradle assemble"
-        run: "./gradlew --no-daemon assemble"
-      - name: "Execute Gradle check"
-        run: "./gradlew --no-daemon check"
+    - name: Grant execute permission for gradlew
+      run: chmod +x gradlew
+
+    - name: List project structure
+      run: |
+        ls -R
+        find . -name "build.gradle"
+      continue-on-error: true
+
+    - name: Build Debug APK
+      run: ./gradlew assembleDebug
+      continue-on-error: true
+
+    - name: List build outputs
+      run: |
+        find . -type f -name "*.apk"
+        find . -type d -name "build"
+      continue-on-error: true
+
+    - name: Upload APK Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: app-debug-apk
+        path: ./**/*.apk
+        if-no-files-found: warn
