@@ -1,0 +1,70 @@
+name: Build Debug APK and Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    env:
+      GRADLE_MICROG_VERSION_WITHOUT_GIT: 1
+    
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: "temurin"
+          java-version: "17"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v5
+
+      - name: Create debug keystore
+        run: |
+          mkdir -p ~/.android
+          keytool -genkey -v -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+
+      - name: Build Release APK
+        run: ./gradlew :play-services-core:assembleMapboxDefaultRelease :play-services-core:assembleMapboxHuaweiRelease
+
+      - name: Sign APK files
+        run: |
+          for apk in play-services-core/build/outputs/apk/**/release/*.apk; do
+            echo "Signing: $apk"
+            jarsigner -verbose -sigalg SHA256withRSA -digestalg SHA-256 -keystore ~/.android/debug.keystore -storepass android "$apk" androiddebugkey
+            echo "Signed: $apk"
+          done
+
+      - name: Prepare APK files
+        run: |
+          mkdir -p release-apks
+          find play-services-core/build/outputs/apk -name "*.apk" -type f -exec cp {} release-apks/ \;
+          ls -lah release-apks/
+
+      - name: Get tag name
+        id: tag
+        run: |
+          if [ "${{ github.ref_type }}" == "tag" ]; then
+            echo "tag=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=build-$(date +'%Y%m%d-%H%M%S')" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create Release
+        uses: ncipollo/release-action@v1
+        with:
+          artifacts: "release-apks/*.apk"
+          token: ${{ secrets.GITHUB_TOKEN }}
+          tag: ${{ steps.tag.outputs.tag }}
+          draft: false
+          prerelease: false
+          generateReleaseNotes: true
